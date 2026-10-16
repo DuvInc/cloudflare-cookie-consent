@@ -12,7 +12,7 @@ description: Add, change or remove a third party (analytics, pixel, chat, heatma
 > were well.
 
 The procedure. The reasoning is in `AGENTS.md`, the failures already paid in the
-README's "Things that bite".
+README's "Things to know when you put it on your site".
 
 ## When to use it
 

@@ -327,25 +327,61 @@ choice, it starts after "Accept", it is gone after a withdrawal.
 Look at your plan's Worker request limits before turning this on for a site with
 a lot of traffic: every page view is one.
 
-## Things that bite
+## Already handled for you
 
-Each of these cost a real deployment something.
+This engine ran on four production sites before it was published here. Each
+problem below happened on one of them, and the fix is now in the engine: you get
+it without doing anything.
 
-| What happened | The rule |
-| :--- | :--- |
-| A withdrawal reloaded the page, the asset layer answered `304`, and the browser reused the document rendered for the old choice. Every tracker came back. | Pages are requested **without** `If-None-Match`, returned **without** `ETag`, as `private, no-cache`, with `Vary: Cookie`. Never put a cache on this HTML. `check-consent-live` pins it. |
-| Astro: a script with `define:vars` silently loses every other attribute, `data-consent` included. It passed locally on a newer Astro than the lockfile's. | Pass values as `data-*` attributes and read them with `document.currentScript.dataset`. Test with the version in the **lockfile**. And keep `is:inline` on a marked script: a script the framework compiles breaks silently. |
-| `run_worker_first` listed pages. Three were left out and shipped trackers with no banner. | Everything minus the assets (step 5). |
-| PostHog persists in `localStorage` too, under keys suffixed `__flags`. A cookie-only sweep left the identifier on the device. | The sweep erases cookies **and** `localStorage` keys by prefix. |
-| A test pinned `__consent` on every port of `localhost`: cookies ignore the port, so another project's dev server answered as "already decided". | Use `clearConsent` (or clear cookies) before testing another site on `localhost`. |
-| A tag manager container loaded GA4, Clarity and Umami on top of the tool everyone knew about. Nobody could tell from the repository. | Read what a container loads (`gtm.js?id=...`) before removing it. Put the third parties in your code, marked. |
-| Cloudflare Web Analytics injected its beacon **after** the Worker, on two sites. It left with no consent and neither guard saw it. | Set the site to `lite` mode (no beacon for EU visitors) and check the HTML served from the EU, not only the build. |
-| A site was redeployed without its analytics token: no tracker, so no tag to block. | A live check that finds "nothing to block" is a **failure**, not a success. |
-| A check for "no <vendor>" searched for the vendor's name and failed once the `retired` list mentioned it. | An absence check looks for the third party's host (`vendor.com`), not its name. |
-| `wrangler dev` kept a stale asset manifest after `rm -rf dist`. | Restart the local server after every rebuild of the output folder. |
-| `__consent=%%%%` was a 500 on every page: `decodeURIComponent` throws. | A cookie is attacker-controlled input. A malformed one is "no choice". |
-| A page with no `</body>` shipped with its trackers blocked and no banner and no runtime: unconsentable. | The runtime is also injected at document end if the `</body>` handler never fired. |
-| A choice made from the preferences page changed nothing on screen, so visitors could not tell it was taken. | The panel refreshes its status line and its checkboxes after a choice. |
+- **A withdrawal no longer brings the trackers back.** The page is re-requested
+  without validators and answered `private, no-cache`, `Vary: Cookie`, with no
+  `ETag`, so the browser can never reuse a `304` rendered for the old choice.
+- **Withdrawing erases the identifier, not only the cookie.** Analytics SDKs also
+  persist in `localStorage` (PostHog under keys suffixed `__flags`): the sweep
+  clears cookies and `localStorage` keys by prefix, on every parent domain.
+- **A malformed cookie is "no choice", not a 500.** `__consent=%%%%` used to throw
+  in `decodeURIComponent` on every page.
+- **A page without `</body>` still gets its banner.** The runtime is injected at
+  the end of the document if the `</body>` handler never fired, so a page is never
+  left with its trackers blocked and no way to consent.
+- **The preferences panel shows the choice was taken**: its status line and
+  checkboxes refresh after a decision.
+- **Two `__consent` cookies on one request** (host-only and shared): the newest
+  decision wins, and the old host-only one is expired.
+- **A shared `cookieDomain` is only applied on that domain**, so a branch preview
+  on `.workers.dev` or `localhost` still saves the choice.
+- **The proof log can fail without blocking a refusal.** The cookie is set
+  whatever D1 answers.
+
+## Things to know when you put it on your site
+
+What the engine cannot do for you, because it lives in your build, your
+framework or your Cloudflare settings.
+
+- **`run_worker_first` must be everything minus the assets** (step 5). A list of
+  pages once left three pages shipping trackers with no banner.
+- **A framework that compiles scripts can drop the marker.** In Astro, keep
+  `is:inline` on a marked script, and never use `define:vars` with it: it silently
+  discards every other attribute, `data-consent` included. Pass values as `data-*`
+  and read them with `document.currentScript.dataset`. Test with the framework
+  version in your **lockfile**: it passed locally on a newer Astro.
+- **A tag manager hides your third parties from the repository.** One container
+  loaded GA4, Clarity and Umami on top of the tool everyone knew about. Read what
+  a container loads (`gtm.js?id=...`) before removing it, and put the third parties
+  in your code, marked.
+- **Cloudflare Web Analytics injects its beacon after the Worker**, so it leaves
+  without consent and no guard sees it. Set the site to `lite` mode (no beacon for
+  EU visitors) and check the HTML served from the EU, not only the build.
+- **The build guard only knows the third parties in its list.** Add a vendor's
+  signature before pasting its snippet, not after.
+- **A live check that finds nothing to block is a failure.** A site redeployed
+  without its analytics token has no tag to block and looks perfect. Likewise, an
+  absence check looks for a vendor's host (`vendor.com`), not its name, which may
+  appear legitimately (in the `retired` list, for instance).
+- **On `localhost`, cookies ignore the port.** Another project's dev server can
+  answer as "already decided": call `/api/consent-reset` (or clear cookies) first.
+- **`wrangler dev` keeps a stale asset manifest** after you delete and rebuild the
+  output folder. Restart it.
 
 **The `retired` category.** When you remove a tool, its cookies stay on the
 devices of returning visitors, sometimes for two years. The runtime sweeps, on
