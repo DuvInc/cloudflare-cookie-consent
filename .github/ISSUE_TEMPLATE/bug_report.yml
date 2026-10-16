@@ -1,0 +1,34 @@
+name: Bug report
+description: Something does not work the way this repository says it does.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you ran, what you expected, and what you got. For a tag that leaked, say which state you were in (no choice, accepted, refused).
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: html
+    attributes:
+      label: The HTML the Worker served, if it is about a tag
+      description: >
+        The relevant tag as it arrived in the response (`curl` with the
+        `__consent` cookie you used), not as the browser shows it afterwards.
+      render: html
+  - type: input
+    id: setup
+    attributes:
+      label: Commit, Node version, `compatibility_date`, framework serving the HTML
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before filing
+      options:
+        - label: My paste contains no secret and no real visitor's consent reference.
+          required: true
+        - label: I ran `scripts/check-consent-live.mjs` against the site, or I say why not.

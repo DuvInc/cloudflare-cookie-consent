@@ -1,0 +1,19 @@
+name: Feature request
+description: Something this tool should be able to do and cannot.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you are trying to do
+      description: The situation (a tool you need to block, a layout you need), not the solution.
+    validations:
+      required: true
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - label: This does not need a new npm dependency, or I have said why it does.
+        - label: This does not add a network call or a secret read at import, or I have said why it must.
+        - label: It is about blocking and recording consent, not about writing the legal text of a policy.

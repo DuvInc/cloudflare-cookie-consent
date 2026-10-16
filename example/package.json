@@ -1,0 +1,14 @@
+{
+  "name": "cookie-consent-example",
+  "private": true,
+  "type": "module",
+  "description": "A two-page static site behind the consent Worker. Not part of the package: it exists to be run.",
+  "scripts": {
+    "dev": "wrangler d1 migrations apply cookie-consent --local && wrangler dev",
+    "check": "node ../scripts/check-consent.mjs public && node ../scripts/check-consent-live.mjs http://localhost:8787 --paths /,/about,/cookie-information --expect-blocked 2",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.40.0"
+  }
+}

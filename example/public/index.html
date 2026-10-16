@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cookie consent example</title>
+<link rel="stylesheet" href="/assets/style.css">
+
+<!-- A fake analytics tool. Marked, so the edge neutralises it until the visitor
+     says yes. `data-consent` goes on the tag that carries the code. -->
+<script data-consent="analytics">
+  window.__analytics = true;
+  document.cookie = 'fake_analytics_id=demo; Path=/; Max-Age=31536000';
+</script>
+</head>
+<body>
+<nav><a href="/">Home</a><a href="/about">About</a></nav>
+<h1>Cookie consent, decided at the edge</h1>
+<p>This page loads a fake analytics script and a fake marketing pixel. Before you choose, the Worker sends both already inert. Open the network tab: nothing is requested, and the cookie below is never set.</p>
+<p>Accept, and the script starts without a reload. Decline, then withdraw: the page reloads and the cookie is erased.</p>
+
+<h2>What loaded on this page</h2>
+<div id="status" aria-live="polite"></div>
+
+<!-- Not marked, not from a known vendor: strictly necessary, never blocked. It
+     only reports. After a "yes" the revived script runs a moment later, hence
+     the listener on the event the runtime dispatches. -->
+<script>
+  function report() {
+    var rows = [
+      ['Analytics script (data-consent="analytics")', window.__analytics ? 'running' : 'blocked'],
+      ['Analytics cookie', document.cookie.indexOf('fake_analytics_id=') >= 0 ? 'present' : 'absent'],
+      ['Marketing pixel (noscript data-consent="marketing")', document.querySelector('noscript[data-consent="marketing"]') && document.querySelector('noscript[data-consent="marketing"]').textContent.trim() ? 'present (JavaScript off only)' : 'emptied'],
+    ];
+    document.getElementById('status').innerHTML = rows.map(function (r) {
+      return '<div><span>' + r[0] + '</span><strong>' + r[1] + '</strong></div>';
+    }).join('');
+  }
+  report();
+  document.addEventListener('cookie-consent', function () { setTimeout(report, 50); });
+</script>
+
+<!-- A fake marketing pixel. A pixel's data-consent goes on the <noscript>, not
+     on the <img>: the content of a <noscript> is opaque to the Worker, which
+     can only empty it. -->
+<noscript data-consent="marketing"><img src="https://pixel.example.test/p.gif?id=demo" width="1" height="1" alt=""></noscript>
+
+<footer>
+  <!-- The link that lets a visitor change their mind. -->
+  <a href="/cookie-information#cookie-preferences">Cookie preferences</a>
+  <a href="/api/consent-reset">Start over (demo)</a>
+</footer>
+</body>
+</html>

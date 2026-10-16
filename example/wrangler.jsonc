@@ -1,0 +1,50 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cookie-consent-example",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-09-01",
+  "observability": { "enabled": true },
+
+  /*
+   * The proof log: one row per DECISION, never per page view.
+   *
+   * `npm run dev` creates the table in a local database, so trying this out
+   * writes nothing anywhere real, and the placeholder id below is fine locally.
+   * To deploy, create a database (`npx wrangler d1 create cookie-consent`),
+   * paste its id here, and apply the schema once:
+   *   npx wrangler d1 migrations apply cookie-consent --remote
+   *
+   * Remove this block and the engine still works: decisions are honoured and
+   * simply not logged.
+   */
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "cookie-consent",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "../migrations"
+    }
+  ],
+
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    // Misses fall through to ASSETS.fetch(), which returns 404.html. That page
+    // carries the same layout and so the same trackers: it has to stay consentable.
+    "not_found_handling": "404-page",
+    /*
+     * EVERY document, and only documents: everything, minus the assets.
+     *
+     * Listing the pages one by one is the trap. A page missing from the list
+     * never reaches the Worker, so it ships its trackers with no banner and
+     * nothing says so. The two failure modes are not equal: a forgotten
+     * exclusion costs one Worker invocation on an asset, a forgotten page costs
+     * a tracker without consent.
+     *
+     * The cost of this setting is one invocation per page view. Assets stay on
+     * the unbilled static layer: add an exclusion for each folder of them.
+     * `*` matches across slashes.
+     */
+    "run_worker_first": ["/*", "!/assets/*"]
+  }
+}

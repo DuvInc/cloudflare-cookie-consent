@@ -1,0 +1,17 @@
+node_modules/
+.DS_Store
+
+# Real values. The engine reads no secret at import; PROOF_SALT is a Worker secret.
+.env
+.env.*
+!.env.example
+.dev.vars
+
+# Wrangler's local state, including the local D1 database that `npm run example`
+# writes consent rows into.
+.wrangler/
+
+# Editor and agent tooling. The skill lives in `skills/`, which is committed.
+.vscode/
+.idea/
+.claude/

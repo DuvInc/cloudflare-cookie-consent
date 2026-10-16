@@ -1,0 +1,7 @@
+:root { color-scheme: light dark; }
+body { font: 16px/1.6 ui-sans-serif, system-ui, sans-serif; max-width: 40rem; margin: 3rem auto; padding: 0 1rem; }
+nav a, footer a { margin-right: 1rem; }
+code { background: rgba(127, 127, 127, 0.15); padding: 0.1em 0.3em; border-radius: 4px; }
+#status { border: 1px solid rgba(127, 127, 127, 0.4); border-radius: 8px; padding: 0.75rem 1rem; }
+#status div { display: flex; justify-content: space-between; gap: 1rem; }
+footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid rgba(127, 127, 127, 0.3); }

@@ -1,0 +1,25 @@
+{
+  "name": "cloudflare-cookie-consent",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A cookie banner decided at the edge: a Cloudflare Worker reads the consent cookie on the request and sends HTML whose non-consented tags are already inert. No CMP script, no flash of tracking.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./cookie": "./src/cookie.ts",
+    "./rewrite": "./src/rewrite.ts",
+    "./ui": "./src/ui.ts",
+    "./runtime": "./src/runtime.ts",
+    "./migrations/*": "./migrations/*"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "check": "for f in scripts/*.mjs test/*.mjs test/helpers/*.mjs; do node --check \"$f\"; done",
+    "example": "cd example && npm install && npm run dev",
+    "check:example": "node scripts/check-consent.mjs example/public && node scripts/check-consent-live.mjs http://localhost:8787 --paths /,/about,/cookie-information --expect-blocked 2"
+  }
+}

@@ -1,0 +1,2 @@
+# Copy to .dev.vars for `wrangler dev`. Any string: it only salts a hash.
+PROOF_SALT=change-me
