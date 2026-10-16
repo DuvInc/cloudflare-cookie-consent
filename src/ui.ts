@@ -108,10 +108,12 @@ export function bannerHtml(
         '<button type="button" class="primary big" data-act="accept">' + copy.accept + '</button>' +
         '<div class="row links">' +
         '<button type="button" class="link" data-act="reject">' + copy.reject + '</button>'
-      : /* Default: the two answers are the same size, side by side. */
+      : /* Default: the two answers are the same size, side by side. Decline
+         * first, Accept on the right: the primary action where a dialog's
+         * confirm usually sits, and refusing is the first one Tab reaches. */
         '<div class="row">' +
-        '<button type="button" class="primary" data-act="accept">' + copy.accept + '</button>' +
         '<button type="button" data-act="reject">' + copy.reject + '</button>' +
+        '<button type="button" class="primary" data-act="accept">' + copy.accept + '</button>' +
         '</div>' +
         '<div class="row links">') +
     '<button type="button" class="link summary" data-act="detail">' + copy.customise + '</button>' +

@@ -42,7 +42,7 @@ script it adds to a page is **2.1 KB gzipped** (5.9 KB raw). A visitor who has n
 chosen yet gets the banner on top: **3.8 KB gzipped for both**, in the document,
 so it paints with the first frame and moves nothing.
 
-![The example site served by the Worker with no choice yet: the analytics script blocked, its cookie absent, the marketing pixel emptied, and the banner with Accept and Decline the same size](docs/banner.png)
+![The example site served by the Worker with no choice yet: the analytics script blocked, its cookie absent, the marketing pixel emptied, and the banner with Decline and Accept the same size, Accept on the right](docs/banner.png)
 
 ## How it works
 
@@ -208,7 +208,7 @@ const consent = createConsent({
 | `copy` | English | Per language (the first two letters of `<html lang>`), merged over the built-in English. HTML is allowed in values. A category you leave out of `categories` is not offered, and "Accept all" does not grant it. |
 | `theme` | light + dark | Any CSS value, including `var(--token)`. Leave the `dark*` keys out for no dark mode of its own (right when your tokens already switch). |
 | `cookieDomain` | host-only | `.example.com` shares one choice across subdomains, only on a request that really is on that domain. |
-| `rejectStyle` | `'button'` | `'button'`: Accept and Decline the same size. `'link'`: Accept is large and Decline is a text link. |
+| `rejectStyle` | `'button'` | `'button'`: Decline and Accept the same size, Accept on the right. `'link'`: Accept is large and Decline is a text link. |
 | `googleConsentMode` | `false` | Emits Consent Mode v2 defaults at the top of `<head>`: `denied` for an undecided visitor, `granted` outright for a returning one. |
 | `preferencesPath` | `/cookie-information#cookie-preferences` | Where `clearConsent` redirects. |
 
