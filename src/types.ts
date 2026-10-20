@@ -122,13 +122,24 @@ export type ConsentConfig = {
   googleConsentMode?: boolean;
 };
 
-/** The two Worker bindings the engine reads. Both are optional. */
+/** The Worker bindings the engine reads. All are optional. */
 export type ConsentEnv = {
   /** D1 database holding `consent_log`. Without it, decisions are still honoured and just not logged. */
   DB?: D1Like;
   /** Secret salt for the User-Agent fingerprint in the proof log. Falls back to `site`. */
   PROOF_SALT?: string;
+  /**
+   * A Workers Rate Limiting binding (wrangler `ratelimits`) that caps the proof rows one address can
+   * write. Optional: without it an in-isolate counter (30 writes a minute per address) stands in. Over
+   * the limit the visitor still gets the cookie and a 200, only the proof row is skipped and logged.
+   */
+  CONSENT_LIMITER?: RateLimiterLike;
 };
+
+/** The sliver of a Workers Rate Limiting binding used here. */
+export interface RateLimiterLike {
+  limit(options: { key: string }): Promise<{ success: boolean }>;
+}
 
 /** The sliver of D1 used here. The real `D1Database` satisfies it. */
 export interface D1Like {

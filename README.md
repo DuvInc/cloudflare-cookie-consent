@@ -117,12 +117,20 @@ database is down, and an error page would leave them with a banner and no way to
 say no. The hole is shouted in the logs (`consent-proof-write-failed`), not
 inflicted on the visitor.
 
+**The body and the writes are capped.** The request body is limited to 4 KB (a
+decision is a few dozen bytes; over it, a 413). Each address may write 30 proof
+rows a minute, counted by IPv6 /64 so that rotating through a subscriber's
+addresses buys nothing. Past the limit the visitor still gets the cookie and a
+200: only the proof row is skipped, and the Worker logs
+`consent-proof-rate-limited`. A counter must never be the reason somebody cannot
+refuse. See step 6 for the optional rate-limit binding.
+
 ## Try it locally
 
 ```bash
 git clone https://github.com/DuvInc/cloudflare-cookie-consent
 cd cloudflare-cookie-consent
-npm test                  # 56 tests, no network, no key, no npm install
+npm test                  # 65 tests, no network, no key, no npm install
 npm run example           # installs wrangler in example/, serves http://localhost:8787
 ```
 
@@ -283,6 +291,21 @@ that form does nothing when the table exists with other columns, so a schema
 change goes unnoticed until the first INSERT fails. One database can serve every
 site you run: `site` is a column.
 
+**Cap the proof rows per address (optional).** Without anything, an in-isolate
+counter (30 writes a minute per address, per isolate) already bounds them. For a
+limit shared across isolates, add a Workers Rate Limiting binding named
+`CONSENT_LIMITER` and the engine uses it instead:
+
+```jsonc
+"ratelimits": [
+  { "name": "CONSENT_LIMITER", "namespace_id": "1001", "simple": { "limit": 30, "period": 60 } }
+]
+```
+
+`namespace_id` is **account-wide**: two Workers on one Cloudflare account that
+use the same id share one counter. Pick your own, one that no other Worker of
+the account uses. The binding is optional: a fork without it keeps working.
+
 ### 7. Give visitors a way to change their mind
 
 A page of your own, with the panel mounted where you want it:
@@ -420,11 +443,12 @@ visitor pays `wait_for_update` and risks losing hits.
   renders everything has nothing to neutralise.
 - **Not a vendor catalogue or an IAB TCF string.** Two categories, `analytics`
   and `marketing`, plus `essential`. That is the whole model.
-- **Not rate limited.** `/api/consent` writes one row per request. One
-  deployment saw a bot write 280 rows from one fingerprint in a night. At that
-  volume (a few hundred writes a day) it costs nothing worth acting on; if yours
-  grows, a Workers Rate Limiting binding in `handleConsentApi` that still sets
-  the cookie but skips the row is the fix.
+- **Not a firewall.** `/api/consent` writes at most one row per request, 30 a
+  minute per address (IPv6 by /64), and the body is capped at 4 KB. One
+  deployment saw a bot write 280 rows from one fingerprint in a night; the limit
+  bounds that, it does not stop a distributed flood. Past it the cookie is still
+  set and only the row is skipped. For a limit shared across isolates, bind a
+  Workers Rate Limiting binding as `CONSENT_LIMITER` (step 6).
 - **Not a visitor count.** The fingerprint hashes only the User-Agent, so several
   visitors on the same browser share one. It proves that a decision was made, not
   how many people made one.

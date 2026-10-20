@@ -193,3 +193,81 @@ test('createConsent needs a site, and a Worker (or an injected HTMLRewriter) to 
   const bare = createConsent({ site: 'x' });
   assert.throws(() => bare.applyConsent(request(), html()), /HTMLRewriter/);
 });
+
+test('a body over 4 KB is a 413, on the declared length and on the bytes actually read', async () => {
+  // The body is the visitor's: it was parsed uncapped before the proof write (security audit, 2026-10-19).
+  const db = fakeDb();
+  const big = { granted: [], locale: 'en', pad: 'x'.repeat(5000) };
+  assert.equal((await consent.handleConsentApi(post(big), { DB: db })).status, 413);
+  // A client that understates its Content-Length does not get past the cap.
+  const lying = await consent.handleConsentApi(post(big, { 'content-length': '10' }), { DB: db });
+  assert.equal(lying.status, 413);
+  assert.equal(db.calls.length, 0);
+  // A normal decision is far below it.
+  assert.equal((await consent.handleConsentApi(post({ granted: ['analytics'], locale: 'fr' }), { DB: db })).status, 200);
+  assert.equal(db.calls.length, 1);
+});
+
+test('JSON that is not an object ("null") is an empty decision, not a crash', async () => {
+  const res = await consent.handleConsentApi(post('null'), {});
+  assert.equal(res.status, 200);
+  assert.deepEqual((await res.json()).granted, ['essential']);
+});
+
+const postFrom = (ip, body = { granted: [] }) => post(body, { 'cf-connecting-ip': ip });
+
+test('past the per-address limit the proof row is skipped but the cookie is still set', async () => {
+  // One row per call is the cost model, so one address cannot write without bound (security audit, 2026-10-19).
+  const db = fakeDb();
+  const keys = [];
+  const env = { DB: db, CONSENT_LIMITER: { limit: async ({ key }) => (keys.push(key), { success: false }) } };
+  const { result: res, lines } = await silently(() => consent.handleConsentApi(postFrom('198.51.100.3'), env));
+  assert.equal(res.status, 200);
+  assert.ok(res.headers.get('set-cookie').startsWith(COOKIE + '='), 'the refusal is never lost to a counter');
+  assert.equal(db.calls.length, 0);
+  assert.deepEqual(keys, ['consent:198.51.100.3']);
+  assert.equal(JSON.parse(lines[0]).event, 'consent-proof-rate-limited');
+});
+
+test('a limiter that throws falls back to the in-isolate counter, the decision is still honoured', async () => {
+  const db = fakeDb();
+  const env = { DB: db, CONSENT_LIMITER: { limit: async () => { throw new Error('limiter down'); } } };
+  const { result: res, lines } = await silently(() => consent.handleConsentApi(postFrom('198.51.100.4'), env));
+  assert.equal(res.status, 200);
+  assert.equal(db.calls.length, 1);
+  assert.equal(JSON.parse(lines[0]).event, 'consent-limiter-failed');
+});
+
+test('without a binding the in-isolate counter limits the writes, by IPv6 /64', async () => {
+  // A fork with no limiter binding keeps working and is still bounded.
+  const db = fakeDb();
+  const fresh = makeConsent();
+  const statuses = [];
+  await silently(async () => {
+    for (let i = 1; i <= 40; i++) {
+      statuses.push((await fresh.handleConsentApi(postFrom(`2001:db8:99:1::${i.toString(16)}`), { DB: db })).status);
+    }
+  });
+  assert.ok(statuses.every((s) => s === 200), 'every visitor still gets an answer');
+  assert.ok(db.calls.length > 0 && db.calls.length < 40, `only some rows written, got ${db.calls.length}`);
+});
+
+test('a chunked body with no Content-Length is cancelled as soon as it passes 4 KB', async () => {
+  // Untrusted bodies are read bounded as a stream, never buffered then checked (security audit, 2026-10-19).
+  let pulled = 0;
+  let cancelled = false;
+  const chunk = new TextEncoder().encode(' '.repeat(1024));
+  const endless = new ReadableStream({
+    pull(controller) { pulled += 1; controller.enqueue(chunk); },
+    cancel() { cancelled = true; },
+  });
+  const streamed = new Request('https://example.com/api/consent', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: endless,
+    duplex: 'half',
+  });
+  assert.equal((await consent.handleConsentApi(streamed, {})).status, 413);
+  assert.ok(cancelled, 'the stream was cancelled');
+  assert.ok(pulled < 10, `pulled ${pulled} chunks of an endless body`);
+});
