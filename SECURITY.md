@@ -31,8 +31,9 @@ interesting surface:
   still lets through before consent, in any state of the cookie.
 - **Cache poisoning.** A way to make one visitor's rewritten document be served
   to another: validators, `Cache-Control`, `Vary`.
-- **`/api/consent`.** It has no rate limit by design of the package (see the
-  README). A write amplification beyond one row per request is in scope.
+- **`/api/consent`.** The body is capped at 4 KB and the proof rows are limited
+  per address (see the README). A way around either, or a write amplification
+  beyond one row per request, is in scope.
 
 ## What is out of scope
 

@@ -26,6 +26,20 @@
     }
   ],
 
+  /*
+   * Optional: caps the proof rows one address can write (30 a minute), shared
+   * across isolates. Without it the engine uses an in-isolate counter, so this
+   * block can go. Over the limit the visitor still gets the cookie; only the
+   * proof row is skipped.
+   *
+   * `namespace_id` is ACCOUNT-WIDE: two Workers on one Cloudflare account with
+   * the same id share one counter. "1001" is a placeholder: pick your own, an id
+   * no other Worker of your account uses.
+   */
+  "ratelimits": [
+    { "name": "CONSENT_LIMITER", "namespace_id": "1001", "simple": { "limit": 30, "period": 60 } }
+  ],
+
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",

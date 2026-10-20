@@ -38,13 +38,14 @@ network.
 | `src/runtime.ts` | the browser script, as a string (`RUNTIME_SOURCE`) and without its comments (`RUNTIME`) |
 | `src/ui.ts` | the banner markup and its CSS, from a copy and a theme. Pure |
 | `src/config.ts` | built-in English copy, `COPY_FR` as an example, theme defaults, `resolveCopy`, `resolveTheme` |
+| `src/client-address.ts` | the key a limiter counts an address under: IPv4 as is, an IPv6 address by its /64. Pure |
 | `src/types.ts` | every type. Structural stand-ins for `D1Database` and `HTMLRewriter`, so there is no `@cloudflare/workers-types` dependency |
 | `src/index.ts` | the public exports |
 | `migrations/0001_consent_log.sql` | the proof log schema |
 | `scripts/check-consent.mjs` | build guard: a known third party without `data-consent` fails |
 | `scripts/check-consent-live.mjs` | checks served HTML in each consent state, headers, 304, the 404 page |
 | `example/` | a two-page site, `worker/index.ts`, `wrangler.jsonc`. Runs with `npx wrangler dev`. wrangler is a devDependency here only |
-| `test/` | 56 tests, no network, no key. `helpers/html-rewriter.mjs` stands in for HTMLRewriter |
+| `test/` | 65 tests, no network, no key. `helpers/html-rewriter.mjs` stands in for HTMLRewriter |
 | `skills/cloudflare-cookie-consent/SKILL.md` | the procedure for adding a third party, as a skill |
 | `docs/` | `hero.png`, `banner.png` for the README |
 

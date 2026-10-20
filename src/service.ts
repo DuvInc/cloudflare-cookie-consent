@@ -2,6 +2,7 @@ import { COOKIE, expireHostOnlyConsent, expireSharedConsent, readConsent, serial
 import { resolveCopy, resolveTheme } from './config.ts';
 import { withConsent } from './rewrite.ts';
 import { bannerHtml } from './ui.ts';
+import { clientAddress } from './client-address.ts';
 import type {
   CategoryId,
   Consent,
@@ -14,6 +15,10 @@ import type {
 /* A decision is a few dozen bytes. The cap is read on the declared length AND on the bytes
  * actually received: the body used to be parsed uncapped (security audit, 2026-10-19). */
 const MAX_BODY_BYTES = 4 * 1024;
+
+/* One proof row per decision is the cost model; one address changing its mind more than this in a
+ * minute is not a visitor. Generous on purpose: an office shares an address. */
+const WRITES_PER_MINUTE = 30;
 
 /**
  * Pseudonym: storing an IP in clear to prove a consent is itself a processing
@@ -95,6 +100,31 @@ export function createConsent(config: ConsentConfig, deps: CreateConsentDeps = {
 
   const read = (request: Request) => readConsent(request, policyVersion);
 
+  /* The in-isolate counter that stands in when no CONSENT_LIMITER binding is configured, so a fork
+   * without the binding is still bounded. Per isolate, so approximate by design. */
+  const recent = new Map<string, number[]>();
+  function localLimit(key: string, limit = WRITES_PER_MINUTE, windowMs = 60_000): boolean {
+    const now = Date.now();
+    const hits = (recent.get(key) ?? []).filter((t) => now - t < windowMs);
+    hits.push(now);
+    recent.set(key, hits);
+    if (recent.size > 5000) for (const [k, v] of recent) if (!v.some((t) => now - t < windowMs)) recent.delete(k);
+    return hits.length <= limit;
+  }
+
+  /** May this address have its decision written to the proof log? Counted by /64 for IPv6. */
+  async function mayWriteProof(request: Request, env: ConsentEnv): Promise<boolean> {
+    const key = `consent:${clientAddress(request)}`;
+    if (env.CONSENT_LIMITER) {
+      try {
+        return (await env.CONSENT_LIMITER.limit({ key })).success;
+      } catch (error) {
+        console.error(JSON.stringify({ event: 'consent-limiter-failed', error: String(error) }));
+      }
+    }
+    return localLimit(key);
+  }
+
   /**
    * The two consent routes. Returns `null` when the URL is not one, so the
    * router carries on.
@@ -157,8 +187,14 @@ export function createConsent(config: ConsentConfig, deps: CreateConsentDeps = {
      * REFUSE even when the database is down: answering with an error would
      * leave them with the banner and no way to say no, which is worse than the
      * hole in the log. So the hole is shouted in the logs, not inflicted on
-     * the visitor. */
-    if (env.DB) {
+     * the visitor.
+     *
+     * Over the per-address limit the DECISION still counts (the cookie below) and
+     * only the proof row is skipped: a counter must never be the reason a visitor
+     * cannot refuse (security audit, 2026-10-19). */
+    if (!(await mayWriteProof(request, env))) {
+      console.error(JSON.stringify({ event: 'consent-proof-rate-limited', id: decision.id }));
+    } else if (env.DB) {
       try {
         await env.DB.prepare(
           'INSERT INTO consent_log (id, site, at, policy_version, granted, country, client, locale) VALUES (?,?,?,?,?,?,?,?)',
