@@ -251,3 +251,23 @@ test('without a binding the in-isolate counter limits the writes, by IPv6 /64', 
   assert.ok(statuses.every((s) => s === 200), 'every visitor still gets an answer');
   assert.ok(db.calls.length > 0 && db.calls.length < 40, `only some rows written, got ${db.calls.length}`);
 });
+
+test('a chunked body with no Content-Length is cancelled as soon as it passes 4 KB', async () => {
+  // Untrusted bodies are read bounded as a stream, never buffered then checked (security audit, 2026-10-19).
+  let pulled = 0;
+  let cancelled = false;
+  const chunk = new TextEncoder().encode(' '.repeat(1024));
+  const endless = new ReadableStream({
+    pull(controller) { pulled += 1; controller.enqueue(chunk); },
+    cancel() { cancelled = true; },
+  });
+  const streamed = new Request('https://example.com/api/consent', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: endless,
+    duplex: 'half',
+  });
+  assert.equal((await consent.handleConsentApi(streamed, {})).status, 413);
+  assert.ok(cancelled, 'the stream was cancelled');
+  assert.ok(pulled < 10, `pulled ${pulled} chunks of an endless body`);
+});

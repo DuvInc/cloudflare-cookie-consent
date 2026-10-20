@@ -16,6 +16,37 @@ import type {
  * actually received: the body used to be parsed uncapped (security audit, 2026-10-19). */
 const MAX_BODY_BYTES = 4 * 1024;
 
+/* Read as a stream: stop and cancel as soon as the count passes the cap, never buffer then check. */
+class BodyTooLarge extends Error {}
+
+async function readBounded(request: Request, maxBytes: number): Promise<string> {
+  const reader = request.body?.getReader();
+  if (!reader) return '';
+  const declared = Number(request.headers.get('content-length'));
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  try {
+    if (Number.isFinite(declared) && declared > maxBytes) throw new BodyTooLarge();
+    for (;;) {
+      const next = await reader.read();
+      if (next.done) break;
+      length += next.value.byteLength;
+      if (length > maxBytes) throw new BodyTooLarge();
+      chunks.push(next.value);
+    }
+  } catch (error) {
+    void reader.cancel().catch(() => {});
+    throw error;
+  }
+  const bytes = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
+}
+
 /* One proof row per decision is the cost model; one address changing its mind more than this in a
  * minute is not a visitor. Generous on purpose: an office shares an address. */
 const WRITES_PER_MINUTE = 30;
@@ -146,12 +177,12 @@ export function createConsent(config: ConsentConfig, deps: CreateConsentDeps = {
     if (url.pathname !== '/api/consent') return null;
     if (request.method !== 'POST') return new Response('Method not allowed', { status: 405 });
 
-    if (Number(request.headers.get('content-length') ?? 0) > MAX_BODY_BYTES) {
-      return Response.json({ error: 'too large' }, { status: 413 });
-    }
-    const raw = await request.text();
-    if (new TextEncoder().encode(raw).length > MAX_BODY_BYTES) {
-      return Response.json({ error: 'too large' }, { status: 413 });
+    let raw: string;
+    try {
+      raw = await readBounded(request, MAX_BODY_BYTES);
+    } catch (error) {
+      if (error instanceof BodyTooLarge) return Response.json({ error: 'too large' }, { status: 413 });
+      throw error;
     }
 
     let body: { granted?: string[]; locale?: string };
