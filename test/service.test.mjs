@@ -193,3 +193,23 @@ test('createConsent needs a site, and a Worker (or an injected HTMLRewriter) to 
   const bare = createConsent({ site: 'x' });
   assert.throws(() => bare.applyConsent(request(), html()), /HTMLRewriter/);
 });
+
+test('a body over 4 KB is a 413, on the declared length and on the bytes actually read', async () => {
+  // The body is the visitor's: it was parsed uncapped before the proof write (security audit, 2026-10-19).
+  const db = fakeDb();
+  const big = { granted: [], locale: 'en', pad: 'x'.repeat(5000) };
+  assert.equal((await consent.handleConsentApi(post(big), { DB: db })).status, 413);
+  // A client that understates its Content-Length does not get past the cap.
+  const lying = await consent.handleConsentApi(post(big, { 'content-length': '10' }), { DB: db });
+  assert.equal(lying.status, 413);
+  assert.equal(db.calls.length, 0);
+  // A normal decision is far below it.
+  assert.equal((await consent.handleConsentApi(post({ granted: ['analytics'], locale: 'fr' }), { DB: db })).status, 200);
+  assert.equal(db.calls.length, 1);
+});
+
+test('JSON that is not an object ("null") is an empty decision, not a crash', async () => {
+  const res = await consent.handleConsentApi(post('null'), {});
+  assert.equal(res.status, 200);
+  assert.deepEqual((await res.json()).granted, ['essential']);
+});

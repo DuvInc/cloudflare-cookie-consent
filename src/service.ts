@@ -11,6 +11,10 @@ import type {
   RewriterConstructor,
 } from './types.ts';
 
+/* A decision is a few dozen bytes. The cap is read on the declared length AND on the bytes
+ * actually received: the body used to be parsed uncapped (security audit, 2026-10-19). */
+const MAX_BODY_BYTES = 4 * 1024;
+
 /**
  * Pseudonym: storing an IP in clear to prove a consent is itself a processing
  * that would then need justifying.
@@ -112,9 +116,19 @@ export function createConsent(config: ConsentConfig, deps: CreateConsentDeps = {
     if (url.pathname !== '/api/consent') return null;
     if (request.method !== 'POST') return new Response('Method not allowed', { status: 405 });
 
+    if (Number(request.headers.get('content-length') ?? 0) > MAX_BODY_BYTES) {
+      return Response.json({ error: 'too large' }, { status: 413 });
+    }
+    const raw = await request.text();
+    if (new TextEncoder().encode(raw).length > MAX_BODY_BYTES) {
+      return Response.json({ error: 'too large' }, { status: 413 });
+    }
+
     let body: { granted?: string[]; locale?: string };
     try {
-      body = (await request.json()) as typeof body;
+      const parsed: unknown = JSON.parse(raw);
+      /* `null`, a number or a string are valid JSON and not a decision body. */
+      body = parsed && typeof parsed === 'object' ? (parsed as typeof body) : {};
     } catch {
       return Response.json({ error: 'bad json' }, { status: 400 });
     }
