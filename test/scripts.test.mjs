@@ -243,3 +243,24 @@ test('check-wiring: the engine must be a dependency, pinned to a tag or a commit
     for (const d of [missing, branch, tag]) rmSync(d, { recursive: true });
   }
 });
+
+test('dist/ is what src/ builds to, and it imports only .js files', () => {
+  // Sites load dist/. A src/ change without a rebuilt dist/ would ship the old engine.
+  const r = run('build.mjs', '--check');
+  assert.equal(r.status, 0, r.stderr);
+});
+
+test('the published entry points load as plain JavaScript, from a path Node will not strip types in', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'consent-pkg-'));
+  try {
+    const pkg = join(dir, 'node_modules', 'cloudflare-cookie-consent');
+    mkdirSync(pkg, { recursive: true });
+    const { cpSync } = await import('node:fs');
+    for (const entry of ['dist', 'package.json']) cpSync(new URL(`../${entry}`, import.meta.url).pathname, join(pkg, entry), { recursive: true });
+    writeFileSync(join(dir, 'probe.mjs'), "import * as m from 'cloudflare-cookie-consent'; console.log(['createConsent','purgeConsentLog','newReference','RUNTIME'].every((k) => k in m));");
+    const r = spawnSync(process.execPath, [join(dir, 'probe.mjs')], { encoding: 'utf8' });
+    assert.equal(r.stdout.trim(), 'true', r.stderr);
+  } finally {
+    rmSync(dir, { recursive: true });
+  }
+});

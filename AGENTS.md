@@ -41,6 +41,7 @@ network.
 | `src/client-address.ts` | the key a limiter counts an address under: IPv4 as is, an IPv6 address by its /64. Pure |
 | `src/types.ts` | every type. Structural stand-ins for `D1Database` and `HTMLRewriter`, so there is no `@cloudflare/workers-types` dependency |
 | `src/index.ts` | the public exports |
+| `dist/` | `src/` with the types blanked, committed: what a site's bundler and tests load. `npm run build` |
 | `src/policy.ts` | `policySnapshot`, `policyHash`: what the banner said, stored once per version |
 | `src/purge.ts` | `purgeConsentLog`, `RETENTION_DAYS`: the retention, by date |
 | `src/client-address.ts` | the /64 key the per-address limiter counts under |
@@ -63,7 +64,10 @@ npm run check:example  # (second terminal) the live check against the real HTMLR
 ```
 
 Node 22.18 or newer runs the `.ts` files directly by stripping types. Nothing is
-compiled. To type-check without adding a dependency:
+compiled, but `dist/` (the same files with the types blanked, imports pointing at
+`.js`) is committed and is what sites load: Node refuses to strip types under
+`node_modules`, and a git install has no build step. After any change in `src/`
+run `npm run build` and commit `dist/`; a test fails when it is stale. To type-check without adding a dependency:
 `npx -p typescript@5 tsc -p .` (the repo's `tsconfig.json` is strict).
 
 **README images.** `docs/banner.png` is a real screenshot of `npm run example`
