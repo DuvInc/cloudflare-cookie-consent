@@ -182,6 +182,7 @@ commit behind the tag. The package ships TypeScript source and no build step: a
 bundler (wrangler) reads it as it reads your own code, and a site's `tsconfig` needs
 `allowImportingTsExtensions`. A site changes version on purpose, by editing the tag
 and the lockfile in one pull request; the wiring check refuses a branch name.
+`cloudflare-cookie-consent/testing/html-rewriter` exports `FakeHTMLRewriter`, the Node stand-in the engine's own tests use, for a site's tests that run its Worker outside workerd.
 Then, in order:
 
 ### 1. Mark every third party

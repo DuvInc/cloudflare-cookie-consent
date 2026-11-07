@@ -39,13 +39,15 @@
     },
     "./migrations/*": "./migrations/*",
     "./scripts/*": "./scripts/*",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./testing/html-rewriter": "./test/helpers/html-rewriter.mjs"
   },
   "files": [
     "src",
     "dist",
     "migrations",
     "scripts",
+    "test/helpers",
     "README.md",
     "LICENSE"
   ],
