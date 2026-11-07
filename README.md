@@ -15,10 +15,10 @@ This is a Cloudflare Worker that does it on the way out instead. The consent
 cookie is first-party, so it is on the request. The Worker reads it, and rewrites
 the HTML stream before anything reaches the browser: a tag without consent leaves
 as `type="text/plain"`, which the browser does not run and the preload scanner
-does not fetch. No CMP script. No flash of tracking. No dependency.
+does not fetch. No CMP script. No flash of tracking. No runtime dependency.
 
 ```ts
-import { createConsent } from 'cloudflare-cookie-consent'; // or the copy of src/ in your repo
+import { createConsent } from 'cloudflare-cookie-consent';
 
 const consent = createConsent({
   site: 'my-site',
@@ -166,8 +166,23 @@ Nothing here needs a Cloudflare account: wrangler runs it all locally.
 ## Putting it on your site
 
 The engine is a function of a config object, not a module that imports your
-config. Copy `src/` into your Worker project (it has no dependency to install),
-or import it from wherever you keep shared code. Then, in order:
+config. Install it as a dependency pinned to a tag, and import it. Do not copy
+`src/` into a site: a copy is a fork that never receives the next fix (five copies of
+this engine had drifted apart on the sites that ran it before they all imported it).
+
+```jsonc
+// package.json
+"dependencies": { "cloudflare-cookie-consent": "github:DuvInc/cloudflare-cookie-consent#v0.2.0" }
+```
+
+npm writes `git+ssh` into the lockfile for this shorthand, and `npm ci` still installs
+on a machine with no SSH key (checked with ssh disabled: it falls back to HTTPS), so
+a CI such as Cloudflare Workers Builds needs nothing more. The lockfile pins the
+commit behind the tag. The package ships TypeScript source and no build step: a
+bundler (wrangler) reads it as it reads your own code, and a site's `tsconfig` needs
+`allowImportingTsExtensions`. A site changes version on purpose, by editing the tag
+and the lockfile in one pull request; the wiring check refuses a branch name.
+Then, in order:
 
 ### 1. Mark every third party
 
