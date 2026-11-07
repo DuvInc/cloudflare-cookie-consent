@@ -161,3 +161,85 @@ test('check-consent-live: nothing to block is a failure unless --allow-empty', a
     server.close();
   }
 });
+
+/* ---- check-consent-wiring ---- */
+
+const site = (files) => {
+  const dir = mkdtempSync(join(tmpdir(), 'consent-site-'));
+  for (const [name, content] of Object.entries(files)) {
+    mkdirSync(join(dir, name, '..'), { recursive: true });
+    writeFileSync(join(dir, name), content);
+  }
+  return dir;
+};
+const WRANGLER_OK = `{
+  // the proof log of every site
+  "d1_databases": [
+    { "binding": "DB", "database_name": "duv-consent", "database_id": "11111111-1111-1111-1111-111111111111", },
+  ],
+}`;
+const PKG_OK = JSON.stringify({ dependencies: { 'cloudflare-cookie-consent': 'git+https://github.com/DuvInc/cloudflare-cookie-consent.git#0123456789abcdef0123456789abcdef01234567' } });
+const wiring = (dir, ...extra) => run('check-consent-wiring.mjs', '--root', dir, '--package', join(dir, 'package.json'), '--wrangler', join(dir, 'wrangler.jsonc'), ...extra);
+
+test('check-wiring: a site bound to the shared database, importing the engine, passes', () => {
+  const dir = site({ 'wrangler.jsonc': WRANGLER_OK, 'package.json': PKG_OK, 'worker/index.ts': "import { createConsent } from 'cloudflare-cookie-consent';" });
+  try {
+    const r = wiring(dir);
+    assert.equal(r.status, 0, r.stderr);
+  } finally {
+    rmSync(dir, { recursive: true });
+  }
+});
+
+test('check-wiring: a production site with no proof-log binding fails', () => {
+  const dir = site({ 'wrangler.jsonc': '{ "name": "site", "d1_databases": [ { "binding": "OTHER", "database_name": "other", "database_id": "x" } ] }', 'package.json': PKG_OK });
+  try {
+    const r = wiring(dir);
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /no D1 binding named DB or CONSENT_DB on database "duv-consent"/);
+  } finally {
+    rmSync(dir, { recursive: true });
+  }
+});
+
+test('check-wiring: the app binding CONSENT_DB counts (its DB is the product database)', () => {
+  const dir = site({
+    'wrangler.jsonc': '{ "d1_databases": [ { "binding": "DB", "database_name": "product", "database_id": "a" }, { "binding": "CONSENT_DB", "database_name": "duv-consent", "database_id": "b" } ] }',
+    'package.json': PKG_OK,
+  });
+  try {
+    assert.equal(wiring(dir).status, 0);
+  } finally {
+    rmSync(dir, { recursive: true });
+  }
+});
+
+test('check-wiring: a local copy of the engine fails, whatever it is called', () => {
+  const dir = site({
+    'wrangler.jsonc': WRANGLER_OK,
+    'package.json': PKG_OK,
+    'worker/consent/service.ts': "console.error(JSON.stringify({ event: 'consent-proof-write-failed' }));",
+    'node_modules/cloudflare-cookie-consent/src/service.ts': "console.error('consent-proof-write-failed');",
+  });
+  try {
+    const r = wiring(dir);
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /worker\/consent\/service\.ts: a local copy of the consent engine/);
+    assert.doesNotMatch(r.stderr, /node_modules/);
+  } finally {
+    rmSync(dir, { recursive: true });
+  }
+});
+
+test('check-wiring: the engine must be a dependency, pinned to a tag or a commit', () => {
+  const missing = site({ 'wrangler.jsonc': WRANGLER_OK, 'package.json': '{}' });
+  const branch = site({ 'wrangler.jsonc': WRANGLER_OK, 'package.json': JSON.stringify({ dependencies: { 'cloudflare-cookie-consent': 'github:DuvInc/cloudflare-cookie-consent#main' } }) });
+  const tag = site({ 'wrangler.jsonc': WRANGLER_OK, 'package.json': JSON.stringify({ dependencies: { 'cloudflare-cookie-consent': 'github:DuvInc/cloudflare-cookie-consent#v0.2.0' } }) });
+  try {
+    assert.match(wiring(missing).stderr, /is not a dependency/);
+    assert.match(wiring(branch).stderr, /pinned to a tag or a commit/);
+    assert.equal(wiring(tag).status, 0);
+  } finally {
+    for (const d of [missing, branch, tag]) rmSync(d, { recursive: true });
+  }
+});

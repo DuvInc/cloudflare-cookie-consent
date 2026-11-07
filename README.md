@@ -107,15 +107,28 @@ __consent=1~analytics,marketing~k3f9x2~1760000000
           policy version: bump it when a vendor is added, and everyone is asked again
 ```
 
-**The proof log is optional, and one row per decision.** With a D1 binding named
-`DB`, each decision writes one row: site, time, policy version, categories,
-country, locale, and a salted, truncated hash of the User-Agent. No IP. A visitor
-who comes back ten times writes nothing. Without the binding, decisions are still
+**The proof log is optional for the engine, and one row per decision.** With a D1
+binding named `DB`, each decision writes one row: a 16-character reference, site,
+time, policy version, a hash of what the banner said, categories, country, locale,
+and a salted, truncated hash of the User-Agent. No IP. A visitor who comes back ten
+times writes nothing. (Optional for the engine, not for a site you run in
+production: `scripts/check-consent-wiring.mjs` fails a build whose Worker has no
+binding, because a missing log looks exactly like a quiet day.) Without the binding, decisions are still
 honoured and the Worker logs `consent-proof-no-binding`. If the insert fails, the
 visitor's choice is **still honoured**: a person must be able to refuse when your
 database is down, and an error page would leave them with a banner and no way to
 say no. The hole is shouted in the logs (`consent-proof-write-failed`), not
 inflicted on the visitor.
+
+**What was shown is stored too, once per version.** A row that says "policy version
+2" does not say what the banner read. The first decision of each isolate runs one
+`INSERT OR IGNORE` into `consent_policy`: the resolved text of every language, the
+categories offered, the held-back vendors and cookies and the reject layout, under a
+hash of that content. `consent_log.policy_hash` points at it. Existing version, no
+row written; a changed sentence under the same `policyVersion` is a new hash.
+EDPB Guidelines 05/2020 (par. 108) ask for "a copy of the information that was
+presented to the data subject", and add that pointing at a correct configuration is
+not enough.
 
 **The body and the writes are capped.** The request body is limited to 4 KB (a
 decision is a few dozen bytes; over it, a 413). Each address may write 30 proof
@@ -277,14 +290,29 @@ trackers with no banner. The two mistakes do not cost the same: a forgotten
 exclusion costs one Worker invocation on an asset, a forgotten page costs a
 tracker without consent. One site did exactly this and lost three pages to it.
 
-### 6. Add the proof log (optional)
+### 6. Add the proof log
 
 ```bash
 npx wrangler d1 create consent
 # paste the id into wrangler.jsonc as a d1_databases binding named DB
-npx wrangler d1 migrations apply consent --remote      # migrations/0001_consent_log.sql
+npx wrangler d1 migrations apply consent --remote      # migrations/0001, 0002
 npx wrangler secret put PROOF_SALT                     # salts the User-Agent fingerprint
 ```
+
+Apply a new migration **before** any Worker runs the engine version that needs it:
+0002 is additive, so an older engine keeps working against it, and the newer one
+fails its INSERT (the visitor is not affected, the proof row is lost) against a
+database without it. A site on `cloudflare-cookie-consent` can run
+`node node_modules/cloudflare-cookie-consent/scripts/check-consent-wiring.mjs --wrangler wrangler.jsonc`
+in its checks: it fails when no `DB` or `CONSENT_DB` binding names the shared
+database, when a local copy of the engine appears in the repo, and when the
+dependency is not pinned to a tag or a commit.
+
+**Retention.** The engine exports `purgeConsentLog(db)` and `RETENTION_DAYS` (365):
+one scheduled Worker, for the one database, deletes by date and by nothing else (an
+index on `at` serves it). It refuses a retention shorter than 190 days, the validity
+of a choice. Why 12 months, and why an earlier row is not deleted when a visitor
+changes their mind: see the skill. Not legal advice.
 
 The schema is a migration, not a `CREATE TABLE IF NOT EXISTS` in the handler:
 that form does nothing when the table exists with other columns, so a schema

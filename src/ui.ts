@@ -30,7 +30,7 @@ const css = (t: Theme) => `
  * draws a frame around the banner. The buttons keep theirs, and it is explicit. */
 .cc .box:focus{outline:none}
 .cc button:focus-visible{outline:2px solid var(--cc-a);outline-offset:2px}
-.cc h2{margin:0 0 6px;font-size:15px;font-weight:500}
+.cc .title{margin:0 0 6px;font-size:15px;font-weight:500;color:var(--cc-t)}
 .cc p{margin:0 0 16px;color:var(--cc-m)}
 .cc .row{display:flex;gap:8px;flex-wrap:wrap}
 .cc button{flex:1 1 140px;min-height:40px;padding:0 16px;border-radius:calc(var(--cc-r) - 4px);border:1px solid var(--cc-b);background:transparent;color:var(--cc-t);font:inherit;font-weight:500;cursor:pointer}
@@ -99,7 +99,9 @@ export function bannerHtml(
     '<div id="cc-banner" class="cc" role="dialog" aria-modal="false" aria-labelledby="cc-title"' +
     (consent ? ' hidden' : '') + '>' +
     '<div class="box" tabindex="-1">' +
-    '<h2 id="cc-title">' + copy.title + '</h2>' +
+    /* Not an <h2>: the banner is injected into every page, and a heading would
+     * land in each page's outline as a parasite section (SEO audit of Lookio, 2026-10). */
+    '<div id="cc-title" class="title">' + copy.title + '</div>' +
     '<p>' + copy.body + '</p>' +
     '<div class="cats">' + cats + '</div>' +
     (rejectStyle === 'link'

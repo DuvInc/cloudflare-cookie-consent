@@ -1,7 +1,7 @@
 {
   "name": "cloudflare-cookie-consent",
   "type": "module",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "A cookie banner decided at the edge: a Cloudflare Worker reads the consent cookie on the request and sends HTML whose non-consented tags are already inert. No CMP script, no flash of tracking.",
   "license": "MIT",
@@ -14,8 +14,13 @@
     "./rewrite": "./src/rewrite.ts",
     "./ui": "./src/ui.ts",
     "./runtime": "./src/runtime.ts",
-    "./migrations/*": "./migrations/*"
+    "./policy": "./src/policy.ts",
+    "./purge": "./src/purge.ts",
+    "./migrations/*": "./migrations/*",
+    "./scripts/*": "./scripts/*",
+    "./package.json": "./package.json"
   },
+  "files": ["src", "migrations", "scripts", "README.md", "LICENSE"],
   "scripts": {
     "test": "node --test test/*.test.mjs",
     "check": "for f in scripts/*.mjs test/*.mjs test/helpers/*.mjs; do node --check \"$f\"; done",
