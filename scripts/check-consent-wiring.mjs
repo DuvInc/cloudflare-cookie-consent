@@ -4,7 +4,9 @@
  *
  *   node node_modules/cloudflare-cookie-consent/scripts/check-consent-wiring.mjs \
  *     --wrangler wrangler.jsonc [--wrangler apps/docs/wrangler.jsonc ...] \
- *     [--package package.json] [--root .] [--database duv-consent] [--bindings DB,CONSENT_DB]
+ *     [--package package.json] [--root .] [--root ../../shared] [--database duv-consent] [--bindings DB,CONSENT_DB]
+ *
+ * `--root` may be repeated: every folder scanned for a local copy of the engine.
  *
  * Three things go wrong here without a sound, which is why they are checked:
  *
@@ -27,7 +29,7 @@ const many = (name) => argv.flatMap((a, i) => (a === name ? [argv[i + 1]] : []))
 const one = (name, fallback) => many(name)[0] ?? fallback;
 
 const wranglers = many('--wrangler');
-const root = resolve(one('--root', '.'));
+const roots = (many('--root').length ? many('--root') : ['.']).map((r) => resolve(r));
 const packagePath = resolve(one('--package', 'package.json'));
 const database = one('--database', 'duv-consent');
 const bindings = one('--bindings', 'DB,CONSENT_DB').split(',');
@@ -105,12 +107,12 @@ function* files(dir) {
   }
 }
 
-for (const file of files(root)) {
+for (const root of roots) for (const file of files(root)) {
   const text = readFileSync(file, 'utf8');
   const hit = SIGNATURES.find(([re]) => re.test(text));
   if (hit) {
     problems.push(
-      `${relative(root, file)}: a local copy of the consent engine (${hit[1]}). Import ${engine} instead; ` +
+      `${relative(process.cwd(), file)}: a local copy of the consent engine (${hit[1]}). Import ${engine} instead; ` +
         'a fix to the engine is made once, in its own repository.',
     );
   }

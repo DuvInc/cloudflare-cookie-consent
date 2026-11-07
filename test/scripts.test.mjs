@@ -234,6 +234,13 @@ test('check-wiring: a local copy of the engine fails, whatever it is called', ()
     const r = wiring(dir);
     assert.equal(r.status, 1);
     assert.match(r.stderr, /worker\/consent\/service\.ts: a local copy of the consent engine/);
+    // A second folder outside the app (a monorepo's shared/) is scanned too.
+    const shared = site({ 'consent/service.ts': "console.error('consent-proof-write-failed');" });
+    try {
+      assert.match(wiring(dir, '--root', shared).stderr, /service\.ts: a local copy/);
+    } finally {
+      rmSync(shared, { recursive: true });
+    }
     assert.doesNotMatch(r.stderr, /node_modules/);
   } finally {
     rmSync(dir, { recursive: true });
