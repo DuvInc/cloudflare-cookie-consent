@@ -202,6 +202,15 @@ test('check-wiring: a production site with no proof-log binding fails', () => {
   }
 });
 
+test('check-wiring: a site helper that happens to be called withConsent is not a copy', () => {
+  const dir = site({ 'wrangler.jsonc': WRANGLER_OK, 'package.json': PKG_OK, 'src/server.ts': 'function withConsent(request: Request, response: Response) { return response; }' });
+  try {
+    assert.equal(wiring(dir).status, 0);
+  } finally {
+    rmSync(dir, { recursive: true });
+  }
+});
+
 test('check-wiring: the app binding CONSENT_DB counts (its DB is the product database)', () => {
   const dir = site({
     'wrangler.jsonc': '{ "d1_databases": [ { "binding": "DB", "database_name": "product", "database_id": "a" }, { "binding": "CONSENT_DB", "database_name": "duv-consent", "database_id": "b" } ] }',

@@ -90,7 +90,7 @@ for (const file of wranglers) {
 const SIGNATURES = [
   [/consent-proof-write-failed/, 'the proof-log write'],
   [/window\.(cookieConsent|duvConsent)\s*=\s*\{/, 'the browser runtime'],
-  [/function withConsent\s*\(/, 'the HTML rewriter'],
+  [/export function withConsent\s*\(\s*response/, 'the HTML rewriter'],
 ];
 const SKIP = new Set(['node_modules', '.git', 'dist', '.wrangler', '.astro', '.next', '.open-next', '.turbo', 'coverage']);
 const CODE = /\.(ts|tsx|js|mjs|cjs)$/;
