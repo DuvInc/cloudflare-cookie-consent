@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { COOKIE, createConsent, pageRequest } from '../src/index.ts';
-import { cookieFor, html, makeConsent, render, request } from './helpers/site.mjs';
+import { COOKIE, createConsent, newReference, pageRequest, parseConsent, policyHash, policySnapshot, purgeConsentLog, RETENTION_DAYS } from '../src/index.ts';
+import { blockedScripts, cookieFor, html, makeConsent, render, request } from './helpers/site.mjs';
 
 const post = (body, headers = {}, url = 'https://example.com/api/consent') =>
   new Request(url, {
@@ -29,6 +29,10 @@ function fakeDb({ fail = false } = {}) {
     },
   };
 }
+
+/** The proof rows and the policy rows are different statements: tests count them apart. */
+const logCalls = (db) => db.calls.filter((c) => c.sql.includes('INTO consent_log'));
+const policyCalls = (db) => db.calls.filter((c) => c.sql.includes('INTO consent_policy'));
 
 const silently = async (fn) => {
   const original = console.error;
@@ -76,7 +80,7 @@ test('POST /api/consent sets an HttpOnly cookie and answers with the decision', 
   assert.equal(res.status, 200);
   const body = await res.json();
   assert.deepEqual(body.granted, ['essential', 'analytics']);
-  assert.match(body.id, /^[0-9a-f]{8}$/);
+  assert.match(body.id, /^[0-9a-f]{16}$/, '64 bits: it is the primary key of a table shared by every site');
   const setCookie = res.headers.get('set-cookie');
   assert.ok(setCookie.startsWith(COOKIE + '='));
   assert.match(setCookie, /HttpOnly/);
@@ -89,8 +93,9 @@ test('the cookie is set even when the proof insert throws (a visitor can always 
   );
   assert.equal(res.status, 200);
   assert.ok(res.headers.get('set-cookie').startsWith(COOKIE + '='));
-  const logged = JSON.parse(lines[0]);
-  assert.equal(logged.event, 'consent-proof-write-failed'); // the hole is shouted in the logs
+  const events = lines.map((l) => JSON.parse(l));
+  const logged = events.find((e) => e.event === 'consent-proof-write-failed'); // the hole is shouted in the logs
+  assert.ok(logged);
   assert.match(logged.error, /database is down/);
 });
 
@@ -104,29 +109,30 @@ test('one row per decision, with a salted fingerprint and no IP', async () => {
   const db = fakeDb();
   const req = post({ granted: ['analytics', 'analytics', 'bogus', 'essential'], locale: 'fr-FR' }, { 'cf-connecting-ip': '203.0.113.9' });
   await consent.handleConsentApi(req, { DB: db, PROOF_SALT: 'salt-1' });
-  assert.equal(db.calls.length, 1);
-  const [id, site, at, policy, granted, country, client, locale] = db.calls[0].values;
+  assert.equal(logCalls(db).length, 1);
+  const [id, site, at, policy, granted, country, client, locale, hash] = logCalls(db)[0].values;
+  assert.match(hash, /^[0-9a-f]{16}$/, 'the row says which banner text was on screen');
   assert.equal(site, 'test-site');
   assert.equal(granted, 'analytics', 'deduplicated, unknown dropped, essential never stored');
   assert.equal(policy, 1);
   assert.equal(country, 'XX');
   assert.equal(locale, 'fr');
   assert.match(client, /^[0-9a-f]{16}$/);
-  assert.ok(!JSON.stringify(db.calls[0].values).includes('203.0.113.9'), 'no IP is stored');
-  assert.ok(!JSON.stringify(db.calls[0].values).includes('TestBrowser'), 'no raw User-Agent is stored');
-  assert.match(id, /^[0-9a-f]{8}$/);
+  assert.ok(!JSON.stringify(logCalls(db)[0].values).includes('203.0.113.9'), 'no IP is stored');
+  assert.ok(!JSON.stringify(logCalls(db)[0].values).includes('TestBrowser'), 'no raw User-Agent is stored');
+  assert.match(id, /^[0-9a-f]{16}$/);
   assert.ok(Number.isInteger(at));
-  assert.match(db.calls[0].sql, /INSERT INTO consent_log/);
+  assert.match(logCalls(db)[0].sql, /INSERT INTO consent_log/);
 
   // Same User-Agent, other salt: another fingerprint.
   await consent.handleConsentApi(post({ granted: [] }), { DB: db, PROOF_SALT: 'salt-2' });
-  assert.notEqual(db.calls[1].values[6], client);
+  assert.notEqual(logCalls(db)[1].values[6], client);
 });
 
 test('a refusal is stored as "-", never as an empty string', async () => {
   const db = fakeDb();
   await consent.handleConsentApi(post({ granted: [] }), { DB: db });
-  assert.equal(db.calls[0].values[4], '-');
+  assert.equal(logCalls(db)[0].values[4], '-');
 });
 
 test('bad JSON is a 400, a GET is a 405, and other paths are left to the router', async () => {
@@ -205,7 +211,7 @@ test('a body over 4 KB is a 413, on the declared length and on the bytes actuall
   assert.equal(db.calls.length, 0);
   // A normal decision is far below it.
   assert.equal((await consent.handleConsentApi(post({ granted: ['analytics'], locale: 'fr' }), { DB: db })).status, 200);
-  assert.equal(db.calls.length, 1);
+  assert.equal(logCalls(db).length, 1);
 });
 
 test('JSON that is not an object ("null") is an empty decision, not a crash', async () => {
@@ -234,7 +240,7 @@ test('a limiter that throws falls back to the in-isolate counter, the decision i
   const env = { DB: db, CONSENT_LIMITER: { limit: async () => { throw new Error('limiter down'); } } };
   const { result: res, lines } = await silently(() => consent.handleConsentApi(postFrom('198.51.100.4'), env));
   assert.equal(res.status, 200);
-  assert.equal(db.calls.length, 1);
+  assert.equal(logCalls(db).length, 1);
   assert.equal(JSON.parse(lines[0]).event, 'consent-limiter-failed');
 });
 
@@ -249,7 +255,7 @@ test('without a binding the in-isolate counter limits the writes, by IPv6 /64', 
     }
   });
   assert.ok(statuses.every((s) => s === 200), 'every visitor still gets an answer');
-  assert.ok(db.calls.length > 0 && db.calls.length < 40, `only some rows written, got ${db.calls.length}`);
+  assert.ok(logCalls(db).length > 0 && logCalls(db).length < 40, `only some rows written, got ${logCalls(db).length}`);
 });
 
 test('a chunked body with no Content-Length is cancelled as soon as it passes 4 KB', async () => {
@@ -270,4 +276,83 @@ test('a chunked body with no Content-Length is cancelled as soon as it passes 4 
   assert.equal((await consent.handleConsentApi(streamed, {})).status, 413);
   assert.ok(cancelled, 'the stream was cancelled');
   assert.ok(pulled < 10, `pulled ${pulled} chunks of an endless body`);
+});
+
+test('an 8-character reference from a cookie set before the change is still a valid choice', async () => {
+  assert.deepEqual(parseConsent(encodeURIComponent('1~analytics~abcd1234~1760000000'), 1), {
+    version: 1, granted: ['analytics'], id: 'abcd1234', at: 1760000000,
+  });
+  const doc = await render(consent, cookieFor(['analytics'], 'abcd1234'));
+  assert.ok(!doc.text.includes('id="cc-banner"'), 'no banner: the old choice counts');
+  assert.deepEqual(blockedScripts(doc.text), [], 'and what it granted is not held back');
+});
+
+test('references do not collide over a hundred thousand decisions', async () => {
+  const seen = new Set();
+  for (let i = 0; i < 100_000; i++) seen.add(newReference());
+  assert.equal(seen.size, 100_000);
+});
+
+test('what was shown is stored once per version, not once per decision', async () => {
+  const db = fakeDb();
+  const fresh = makeConsent();
+  await silently(async () => {
+    for (let i = 0; i < 5; i++) await fresh.handleConsentApi(post({ granted: ['analytics'] }, { 'cf-connecting-ip': `198.51.100.${i}` }), { DB: db });
+  });
+  assert.equal(logCalls(db).length, 5);
+  assert.equal(policyCalls(db).length, 1, 'one INSERT OR IGNORE for the isolate, then none');
+  const [site, hash, version, at, content] = policyCalls(db)[0].values;
+  assert.equal(site, 'test-site');
+  assert.equal(version, 1);
+  assert.ok(Number.isInteger(at));
+  assert.match(policyCalls(db)[0].sql, /INSERT OR IGNORE INTO consent_policy/);
+  assert.equal(hash, await policyHash(content));
+  assert.ok(logCalls(db).every((c) => c.values[8] === hash), 'every row points at the same snapshot');
+  const shown = JSON.parse(content);
+  assert.equal(shown.rejectStyle, 'button');
+  assert.deepEqual(shown.vendors.map((v) => v.match), ['t.vendor-a.test', 'cdn.vendor-a.test', 'px.vendor-b.test']);
+  assert.ok(shown.copy.en.accept, 'the resolved text of each language is kept, not just its overrides');
+});
+
+test('a changed sentence under the same policy version is a new snapshot', () => {
+  const a = JSON.stringify(policySnapshot({ site: 's', copy: { en: { body: 'One' } } }));
+  const b = JSON.stringify(policySnapshot({ site: 's', copy: { en: { body: 'Two' } } }));
+  assert.notEqual(a, b);
+  assert.equal(a, JSON.stringify(policySnapshot({ site: 's', copy: { en: { body: 'One' } } })), 'deterministic');
+});
+
+test('a failed policy write is retried on the next decision and never blocks the proof row', async () => {
+  const db = fakeDb();
+  const original = db.prepare;
+  let failOnce = true;
+  db.prepare = (sql) => {
+    if (sql.includes('consent_policy') && failOnce) {
+      failOnce = false;
+      return { bind: () => ({ run: async () => { throw new Error('boom'); } }) };
+    }
+    return original(sql);
+  };
+  const fresh = makeConsent();
+  await silently(async () => {
+    await fresh.handleConsentApi(post({ granted: [] }, { 'cf-connecting-ip': '198.51.100.20' }), { DB: db });
+    await fresh.handleConsentApi(post({ granted: [] }, { 'cf-connecting-ip': '198.51.100.21' }), { DB: db });
+  });
+  assert.equal(logCalls(db).length, 2, 'both decisions were logged');
+  assert.equal(policyCalls(db).length, 1, 'the second decision stored the snapshot');
+});
+
+test('purge deletes by date in bounded statements and reports what D1 reports', async () => {
+  const seen = [];
+  const metas = [{ changes: 2, rows_read: 8, rows_written: 6 }, { changes: 1, rows_read: 4, rows_written: 3 }];
+  const db = { prepare: (sql) => ({ bind: (...v) => ({ run: async () => { seen.push({ sql, v }); return { meta: metas.shift() }; } }) }) };
+  const now = Date.UTC(2027, 10, 7);
+  const out = await purgeConsentLog(db, { now, batch: 2 });
+  assert.equal(out.cutoff, Math.floor(now / 1000) - RETENTION_DAYS * 86400);
+  assert.deepEqual([out.deleted, out.statements, out.rowsRead, out.rowsWritten], [3, 2, 12, 9]);
+  assert.match(seen[0].sql, /DELETE FROM consent_log WHERE id IN \(SELECT id FROM consent_log WHERE at < \? LIMIT \?\)/);
+  assert.deepEqual(seen[0].v, [out.cutoff, 2]);
+});
+
+test('purge refuses a retention shorter than the validity of a choice', async () => {
+  await assert.rejects(() => purgeConsentLog({ prepare() { throw new Error('must not run'); } }, { retentionDays: 30 }), /at least 190/);
 });

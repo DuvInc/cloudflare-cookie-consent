@@ -14,7 +14,11 @@ export type CategoryId = 'essential' | 'analytics' | 'marketing';
 export type Consent = {
   version: number;
   granted: CategoryId[];
-  /** Short random reference, shown to the visitor and written to the proof log. */
+  /**
+   * Random reference, shown to the visitor and written to the proof log as its
+   * primary key. New decisions get 16 hex characters (64 bits); a cookie from
+   * before that holds 8 and stays valid, so nothing here may assume a length.
+   */
   id: string;
   /** Unix seconds. */
   at: number;
@@ -141,10 +145,29 @@ export interface RateLimiterLike {
   limit(options: { key: string }): Promise<{ success: boolean }>;
 }
 
+/** What D1 reports about a statement. Only the three counters the purge cost is read from. */
+export type D1Meta = { changes?: number; rows_read?: number; rows_written?: number };
+
 /** The sliver of D1 used here. The real `D1Database` satisfies it. */
 export interface D1Like {
-  prepare(query: string): { bind(...values: unknown[]): { run(): Promise<unknown> } };
+  prepare(query: string): { bind(...values: unknown[]): { run(): Promise<{ meta?: D1Meta } | undefined | void> } };
 }
+
+/**
+ * What a visitor was shown for one version of a site's banner: stored once per
+ * version in `consent_policy`, and pointed at by `consent_log.policy_hash`.
+ */
+export type PolicySnapshot = {
+  site: string;
+  policyVersion: number;
+  rejectStyle: 'button' | 'link';
+  /** The categories offered. "Accept all" grants these and nothing else. */
+  categories: CategoryId[];
+  vendors: Vendor[];
+  cookies: Record<string, string[]>;
+  /** The resolved banner text, one entry per language the site declares, `en` included. */
+  copy: Record<string, Copy>;
+};
 
 /* The sliver of HTMLRewriter used here. Injectable so tests can run in Node. */
 export interface RewriterElement {

@@ -1,4 +1,5 @@
-import { COOKIE, expireHostOnlyConsent, expireSharedConsent, readConsent, serializeConsent } from './cookie.ts';
+import { COOKIE, expireHostOnlyConsent, expireSharedConsent, newReference, readConsent, serializeConsent } from './cookie.ts';
+import { policyHash, policySnapshot } from './policy.ts';
 import { resolveCopy, resolveTheme } from './config.ts';
 import { withConsent } from './rewrite.ts';
 import { bannerHtml } from './ui.ts';
@@ -9,6 +10,7 @@ import type {
   ConsentConfig,
   ConsentEnv,
   CreateConsentDeps,
+  D1Like,
   RewriterConstructor,
 } from './types.ts';
 
@@ -143,6 +145,33 @@ export function createConsent(config: ConsentConfig, deps: CreateConsentDeps = {
     return hits.length <= limit;
   }
 
+  /* What a visitor was shown, stored once per version (see policy.ts). The
+   * snapshot and its hash are computed once per isolate. `INSERT OR IGNORE` on
+   * the (site, hash) key writes nothing when the row exists: D1 bills one row
+   * read, and a row written only the first time a version is ever seen. After
+   * one success the isolate stops asking. A failure is not remembered, so the
+   * next decision tries again, and it never blocks the decision's own row. */
+  const snapshot = policySnapshot(config);
+  const snapshotJson = JSON.stringify(snapshot);
+  let hashPromise: Promise<string> | undefined;
+  let policyStored = false;
+  async function recordPolicy(db: D1Like): Promise<string> {
+    hashPromise ??= policyHash(snapshotJson);
+    const hash = await hashPromise;
+    if (!policyStored) {
+      try {
+        await db
+          .prepare('INSERT OR IGNORE INTO consent_policy (site, hash, policy_version, at, content) VALUES (?,?,?,?,?)')
+          .bind(site, hash, policyVersion, Math.floor(Date.now() / 1000), snapshotJson)
+          .run();
+        policyStored = true;
+      } catch (error) {
+        console.error(JSON.stringify({ event: 'consent-policy-write-failed', hash, error: String(error) }));
+      }
+    }
+    return hash;
+  }
+
   /** May this address have its decision written to the proof log? Counted by /64 for IPv6. */
   async function mayWriteProof(request: Request, env: ConsentEnv): Promise<boolean> {
     const key = `consent:${clientAddress(request)}`;
@@ -202,7 +231,7 @@ export function createConsent(config: ConsentConfig, deps: CreateConsentDeps = {
     const decision: Consent = {
       version: policyVersion,
       granted,
-      id: crypto.randomUUID().slice(0, 8),
+      id: newReference(),
       at: Math.floor(Date.now() / 1000),
     };
 
@@ -227,8 +256,9 @@ export function createConsent(config: ConsentConfig, deps: CreateConsentDeps = {
       console.error(JSON.stringify({ event: 'consent-proof-rate-limited', id: decision.id }));
     } else if (env.DB) {
       try {
+        const policy = await recordPolicy(env.DB);
         await env.DB.prepare(
-          'INSERT INTO consent_log (id, site, at, policy_version, granted, country, client, locale) VALUES (?,?,?,?,?,?,?,?)',
+          'INSERT INTO consent_log (id, site, at, policy_version, granted, country, client, locale, policy_hash) VALUES (?,?,?,?,?,?,?,?,?)',
         )
           .bind(
             decision.id,
@@ -239,6 +269,7 @@ export function createConsent(config: ConsentConfig, deps: CreateConsentDeps = {
             (request as { cf?: { country?: string } }).cf?.country ?? 'XX',
             await fingerprint(request.headers.get('user-agent') ?? '', env.PROOF_SALT ?? site),
             (typeof body.locale === 'string' ? body.locale : 'en').slice(0, 2),
+            policy,
           )
           .run();
       } catch (error) {

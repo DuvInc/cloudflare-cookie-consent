@@ -86,7 +86,7 @@ reloads).
 
 1. List what the site really loads (the hosts in the built HTML, not what you
    believe).
-2. Copy `src/` and write the `createConsent` config: `site` (the key in the proof
+2. Install the package pinned to a tag (do not copy `src/`) and write the `createConsent` config: `site` (the key in the proof
    log), `vendors`, `cookies`, `copy` per language, `theme` (use `var(--token)` if
    the site has tokens: dark mode comes free). Leave a category out of `copy` if no
    tracker uses it.
@@ -94,7 +94,7 @@ reloads).
    `ASSETS.fetch`, `applyConsent` after, also on the 404. `run_worker_first` is
    `["/*", "!<each asset folder>/*", ...]`: everything minus the assets, never a
    list of pages.
-4. D1 binding `DB` (optional) with `migrations/0001_consent_log.sql` applied once
+4. D1 binding `DB` with the `migrations/` applied once (`check-consent-wiring.mjs` fails a site without it)
    and a `PROOF_SALT` secret. Test against a **local** database, never write proof
    rows to production for a test.
 5. Mark the third parties, write the policy page, put `<div id="cc-preferences">`

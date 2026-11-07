@@ -14,6 +14,19 @@ export const COOKIE = '__consent';
 
 export const CATEGORY_IDS: CategoryId[] = ['essential', 'analytics', 'marketing'];
 
+/**
+ * The reference of one decision: 16 hex characters from the platform's random
+ * source, 64 bits. It is the primary key of the proof log, so it has to stay
+ * unique across every site that shares the database. The first version used
+ * `randomUUID().slice(0, 8)`, 32 bits, which reaches an even chance of a
+ * collision at roughly 77,000 rows, and a collision loses a proof row (the
+ * failed INSERT is swallowed so that a visitor can always refuse).
+ */
+export function newReference(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(8));
+  return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 /** Max age of a *choice*, not of the cookie file. CNIL recommends six months. */
 const SIX_MONTHS = 60 * 60 * 24 * 182;
 

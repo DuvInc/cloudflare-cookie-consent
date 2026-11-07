@@ -41,8 +41,13 @@ network.
 | `src/client-address.ts` | the key a limiter counts an address under: IPv4 as is, an IPv6 address by its /64. Pure |
 | `src/types.ts` | every type. Structural stand-ins for `D1Database` and `HTMLRewriter`, so there is no `@cloudflare/workers-types` dependency |
 | `src/index.ts` | the public exports |
-| `migrations/0001_consent_log.sql` | the proof log schema |
+| `dist/` | `src/` with the types blanked, committed: what a site's bundler and tests load. `npm run build` |
+| `src/policy.ts` | `policySnapshot`, `policyHash`: what the banner said, stored once per version |
+| `src/purge.ts` | `purgeConsentLog`, `RETENTION_DAYS`: the retention, by date |
+| `src/client-address.ts` | the /64 key the per-address limiter counts under |
+| `migrations/` | the proof log schema: 0001 the log, 0002 `consent_policy`, `policy_hash`, an index on `at` |
 | `scripts/check-consent.mjs` | build guard: a known third party without `data-consent` fails |
+| `scripts/check-consent-wiring.mjs` | site guard: the shared database is bound, no local copy of the engine, the dependency is pinned |
 | `scripts/check-consent-live.mjs` | checks served HTML in each consent state, headers, 304, the 404 page |
 | `example/` | a two-page site, `worker/index.ts`, `wrangler.jsonc`. Runs with `npx wrangler dev`. wrangler is a devDependency here only |
 | `test/` | 65 tests, no network, no key. `helpers/html-rewriter.mjs` stands in for HTMLRewriter |
@@ -59,7 +64,10 @@ npm run check:example  # (second terminal) the live check against the real HTMLR
 ```
 
 Node 22.18 or newer runs the `.ts` files directly by stripping types. Nothing is
-compiled. To type-check without adding a dependency:
+compiled, but `dist/` (the same files with the types blanked, imports pointing at
+`.js`) is committed and is what sites load: Node refuses to strip types under
+`node_modules`, and a git install has no build step. After any change in `src/`
+run `npm run build` and commit `dist/`; a test fails when it is stale. To type-check without adding a dependency:
 `npx -p typescript@5 tsc -p .` (the repo's `tsconfig.json` is strict).
 
 **README images.** `docs/banner.png` is a real screenshot of `npm run example`
@@ -99,6 +107,9 @@ example serves is worse than none.
 6. **The schema comes from `migrations/`, never from `CREATE TABLE IF NOT EXISTS`
    in the handler.** That form does nothing when the table exists with other
    columns, so a schema change goes unnoticed until the first INSERT fails.
+   A migration is additive and is applied BEFORE the engine that needs it ships: an
+   INSERT against a missing column fails, the failure is swallowed so a visitor can
+   refuse, and the only trace is a log line.
 7. **The cookie is input from an attacker.** Parsing never throws: a malformed
    value is "no choice". A stale `policyVersion` is "no choice" too, so the banner
    asks again. Two `__consent` cookies on one request (host-only and shared): the
@@ -161,7 +172,7 @@ example serves is worse than none.
   The example's `wrangler.jsonc` carries a placeholder database id on purpose.
 - **Do not write to a production D1 database to test.** Use `wrangler dev` and its
   local database (`npm run example`).
-- **Do not add a dependency.** `wrangler` in `example/` is the only one.
+- **Do not add a runtime dependency.** `wrangler` in `example/` is the only one.
 - **Do not commit a real consent log row, a real salt, or a real site's config.**
 - **Never mark a third party as `essential`.**
 - **Nothing here is legal advice.** Do not write copy that says a configuration is
