@@ -1,7 +1,7 @@
 {
   "name": "cloudflare-cookie-consent",
   "type": "module",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "A cookie banner decided at the edge: a Cloudflare Worker reads the consent cookie on the request and sends HTML whose non-consented tags are already inert. No CMP script, no flash of tracking.",
   "license": "MIT",

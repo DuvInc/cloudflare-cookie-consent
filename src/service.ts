@@ -199,7 +199,8 @@ export function createConsent(config: ConsentConfig, deps: CreateConsentDeps = {
     if (url.pathname === '/api/consent/banner') {
       const locale = (url.searchParams.get('locale') || 'en').slice(0, 2).toLowerCase();
       return new Response(bannerHtml(copyFor(locale), theme, consent, rejectStyle), {
-        headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
+        // A fragment the runtime fetches, so crawlers find it: never a search result.
+        headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-robots-tag': 'noindex' },
       });
     }
 

@@ -172,7 +172,7 @@ this engine had drifted apart on the sites that ran it before they all imported 
 
 ```jsonc
 // package.json
-"dependencies": { "cloudflare-cookie-consent": "github:DuvInc/cloudflare-cookie-consent#v0.2.0" }
+"dependencies": { "cloudflare-cookie-consent": "github:DuvInc/cloudflare-cookie-consent#v0.2.1" }
 ```
 
 npm writes `git+ssh` into the lockfile for this shorthand, and `npm ci` still installs

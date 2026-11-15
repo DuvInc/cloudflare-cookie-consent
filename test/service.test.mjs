@@ -158,6 +158,13 @@ test('GET /api/consent/banner renders in the asked language and reflects an exis
   assert.equal(res.headers.get('cache-control'), 'no-store');
 });
 
+test('GET /api/consent/banner is kept out of search results', async () => {
+  // 2026-11-15: Google showed /api/consent/banner?locale= as a sitelink under
+  // "ai glot". The runtime fetches it, so crawlers find it; it is a fragment, not a page.
+  const res = await makeConsent().handleConsentApi(request(null, 'https://example.com/api/consent/banner?locale='), {});
+  assert.equal(res.headers.get('x-robots-tag'), 'noindex');
+});
+
 test('policyVersion: bumping it invalidates stored choices and brings the banner back', async () => {
   const v2 = makeConsent({ policyVersion: 2 });
   const { text } = await render(v2, cookieFor(['analytics'], 'abc', 1, 1));
